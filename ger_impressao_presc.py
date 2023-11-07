@@ -5,6 +5,7 @@ import time
 from datetime import datetime
 import cx_Oracle
 
+
 # configure pdfkit to point to our installation of wkhtmltopdf
 config = pdfkit.configuration(wkhtmltopdf = r"C:\Program Files\wkhtmltopdf\bin\wkhtmltopdf.exe")
 
@@ -12,118 +13,66 @@ caminho = r"C:\pdf_arquivos"#caminho do arquivo a ser impresso
 nome_arquivo_pdf = r"C:\pdf_arquivos\imprimir.pdf"# nome do arquivo a ser imprimido
 lista_arquivos = os.listdir(caminho)
 
-cod_oficina = 29
+cod_destino = "IMP_FARM06" 
+dt_prescricao = '19/09/23'
+hora_prescricao = '07:14'
 
 def imprimir():
     for arquivo in lista_arquivos:
         data_e_hora_atuais = datetime.now()
         win32api.ShellExecute(0, "print", arquivo, None, caminho, 0)
-        print("Imprimindo OS para esta Oficina", data_e_hora_atuais, "oficina: " , cod_oficina)
+        print("Imprimindo OS para esta Oficina", data_e_hora_atuais, "oficina: " , cod_destino)
+     
     
 #-------------------------------------- 
-def inserir_os():
-    dsnStr = cx_Oracle.makedsn("172.18.2.193", "1521", "prd2")
-    conn = None
-    conn = cx_Oracle.connect(user="cn_sla", password="%sla*", dsn=dsnStr)
-    cur = conn.cursor()
-    sql = f"""INSERT INTO impressao_os (cd_os,cd_oficina,dt_impressao) 
-                VALUES ({os},{cod_oficina},sysdate)"""
-    cur.execute(sql)      
-    conn.commit()                  
-    print("salvo")   
+# def inserir_os():
+#     dsnStr = cx_Oracle.makedsn("172.18.2.193", "1521", "prd2")
+#     conn = None
+#     conn = cx_Oracle.connect(user="cn_sla", password="%sla*", dsn=dsnStr)
+#     cur = conn.cursor()
+#     sql = f"""INSERT INTO impressao_os (cd_os,cd_oficina,dt_impressao) 
+#                 VALUES ({prescricao},{cod_destino},sysdate)"""
+#     cur.execute(sql)      
+#     conn.commit()                  
+#     print("salvo")   
 #-------------------------------------- 
-def num_os():
+def num_prescricao():
     dsnStr = cx_Oracle.makedsn("172.18.2.193", "1521", "prd2")
     conn = None
     conn = cx_Oracle.connect(user="cn_sla", password="%sla*", dsn=dsnStr)
     cur = conn.cursor()
-    sql = f"""SELECT 
-                min(so.cd_os)
-                FROM
-                    dbamv.solicitacao_os so,
-                    dbamv.itsolicitacao_os iso,
-                    cn_sla.impressao_os io
-                WHERE
-                    so.cd_oficina = {cod_oficina}
-                AND so.tp_situacao IN (
-                    'A',
-                    'S'
-                    )
-            and so.cd_os=iso.cd_os(+)
-            and iso.cd_os is null
-            and so.cd_os=io.cd_os(+)
-            and io.cd_os is null
-            and so.dt_pedido >= to_date('05/01/2023', 'DD-MM-YYYY')
-            and so.cd_tipo_os!=36"""
-            
+    sql = f"""SELECT
+    min(i.cd_impressao)
+FROM
+    impressao i
+WHERE
+    i.destino = 'IMP_FARM06'"""
     cur.execute(sql)
     results = cur.fetchmany(3) 
     for res in results:
         return res[0]
 #-------------------------------------- 
-while True:    
-    os = num_os()
-    if os is not None:
+# while True:    
+    prescricao = num_prescricao()
+    if prescricao:
         def teste():
             dsnStr = cx_Oracle.makedsn("172.18.2.193", "1521", "prd2")
             conn = None
             conn = cx_Oracle.connect(user="cn_sla", password="%sla*", dsn=dsnStr)
             cur = conn.cursor()
            
-            sql = f"""SELECT 
-                    nvl( to_char(so.dt_prev_exec, 'dd/mm/yy hh24:mi'),to_char(so.dt_pedido, 'dd/mm/yy hh24:mi')) AS dt_pedido,
-                    nvl((select u.nm_usuario from DBASGU.usuarios u where u.cd_usuario=so.nm_solicitante ),so.nm_solicitante) as nm_solicitante,
-                    to_char(so.dt_execucao, 'dd/mm/yy hh24:mi') AS dt_execucao,
-                    so.DS_OBSERVACAO as DS_OBSERVACAO,
-                    SO.DS_SERVICO,
-                    so.cd_os,
-                    so.DS_RAMAL,
-                    so.cd_tipo_os||' - '||ts.ds_tipo_os as ds_tipo_os,
-                    s.cd_setor||' - '||s.nm_setor as nm_setor,
-                    l.cd_localidade||' - '||l.ds_localidade as ds_localidade,
-                    b.ds_plaqueta||' - '||b.ds_bem as ds_plaqueta,
-                    case  when so.tp_situacao='C' then 'Concluído' 
-                        when so.tp_situacao='N' then 'Não atendido'
-                        when so.tp_situacao='E' then 'Concerto externo' 
-                        when so.tp_situacao='M' then 'Aguardando Material' else 'Aberto' end as tp_situacao,
-                    so.ds_ramal,
-                    ( case  when avs.tp_status='A' then 'Aprovado' 
-                        when avs.tp_status='R' then 'Reprovado' else 'Não avaliado' end ||' - '||
-                    case  when avs.tp_avaliacao='E' then 'Excelente' 
-                        when avs.tp_avaliacao='B' then 'Bom'
-                        when avs.tp_avaliacao='R' then 'Razoável' 
-                        when avs.tp_avaliacao='U' then 'Ruim' else 'Não avaliado' end )as avaliacao,
-                        avs.ds_observacao as obsAvaliacao,
-                    (select u.nm_usuario from dbasgu.usuarios u where u.cd_usuario=avs.cd_usuario) as avaliador,
-                    nvl((select u.nm_usuario from dbasgu.usuarios u where u.cd_usuario=osec.cd_usuario),' -- ') as destimunha,
-                    to_char(osec.dt_confirmacao, 'dd/mm/yy hh24:mi') as dt_conf_comp,
-                    so.cd_oficina||' - '||o.ds_oficina as ds_oficina,
-                    me.ds_espec,
-                    to_char(avs.dt_ultima_atualizacao,'dd/mm/yy hh24:mi'),
-                    so.ds_servico_geral,
-                    s.cd_setor,
-                    l.cd_localidade
-                    
-                FROM
-                    dbamv.solicitacao_os so,
-                    DBAMV.TIPO_OS TS,
-                    dbamv.setor s,
-                    dbamv.localidade l,
-                    dbamv.avaliacao_servico   avs,
-                    dbamv.bens b,
-                    cn_sla.ordens_serv_entr_conf osec,
-                    dbamv.oficina o,
-                    DBAMV.manu_espec me
-                WHERE
-                    so.cd_tipo_os=TS.CD_TIPO_OS
-                    and so.cd_setor=s.cd_setor
-                    and so.cd_localidade=l.cd_localidade
-                    and so.cd_bem=b.cd_bem(+)
-                    and so.cd_os=avs.cd_solicitacao_ordem_srv(+)
-                    and so.cd_os=osec.cd_os(+)
-                    and so.cd_oficina=o.cd_oficina
-                    and so.cd_espec=me.cd_espec(+)
-                    AND so.cd_os = {os}"""
+            sql = f"""select 
+    i.cd_impressao,
+    i.cd_prioridade,
+    i.nm_relatorio,
+    i.destino,
+    i.dt_impressao,
+    i.dt_prevista_impressao,
+    i.dt_solicitacao,
+    i.titulo,
+    i.tp_acao
+from impressao i 
+where i.destino = {cod_destino};"""
             cur.execute(sql)
             results = cur.fetchall() 
             for res in results:
@@ -230,18 +179,18 @@ while True:
         </html>
 """
             
-        pdfkit.from_string(s, output_path = r"C:\pdf_arquivos\imprimir.pdf")
+        # pdfkit.from_string(s, output_path = r"C:\pdf_arquivos\imprimir.pdf")
         
-        imprimir()
+        # imprimir()
     
-        inserir_os()   
+        # inserir_os()   
         
     else:
         time.sleep(3)
         data_e_hora_atuais = datetime.now()
-        print("Nenhuma os para ser impressa", data_e_hora_atuais, "oficina: " , cod_oficina)
+        print("Nenhuma os para ser impressa", data_e_hora_atuais, "oficina: " , cod_destino)
 
-#para gerar um executável é só rodar o comando a seguir no cmd: pyinstaller --onefile ger_impressao.py
+# pyinstaller --onefile ger_impressao.py
 
 
     
